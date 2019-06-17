@@ -8,13 +8,13 @@ import BigNumber from "bn.js";
 import ChildChain from "@omisego/omg-js-childchain";
 import RootChain from "@omisego/omg-js-rootchain";
 import Web3 from "web3";
-import {transaction} from "@omisego/omg-js-util";
+import { transaction } from "@omisego/omg-js-util";
 const ERC20_ABI = require("human-standard-token-abi");
 
-const web3Options = {transactionConfirmationBlocks: 1};
+const web3Options = { transactionConfirmationBlocks: 1 };
 
 export default class EmbarkJSPlasma {
-  constructor({pluginConfig, logger}) {
+  constructor({ pluginConfig, logger }) {
     this.logger = logger;
     this.initing = false;
     this.inited = false;
@@ -24,7 +24,7 @@ export default class EmbarkJSPlasma {
       account: {
         address: "",
         rootBalance: 0,
-        childBalance: 0
+        childBalances: []
       },
       transactions: [],
       utxos: []
@@ -52,7 +52,7 @@ export default class EmbarkJSPlasma {
         this.web3 = web3;
       }
       else {
-        this.web3 = new Web3(web3.currentProvider, null, web3Options);
+        this.web3 = new Web3(web3.currentProvider || web3.givenProvider, null, web3Options);
       }
 
       // set up the Plasma chain
@@ -112,7 +112,7 @@ export default class EmbarkJSPlasma {
       this.logger.info(`Depositing ${amount} wei...`);
       // ETH deposit
       try {
-        const receipt = await this.rootChain.depositEth(depositTx, amount, {from: this.currentAddress});
+        const receipt = await this.rootChain.depositEth(depositTx, amount, { from: this.currentAddress });
         this.logger.trace(receipt);
         const message = `Successfully deposited ${amount} ${currency === transaction.ETH_CURRENCY ? "wei" : currency} in to the Plasma chain.\nView the transaction: https://rinkeby.etherscan.io/tx/${receipt.transactionHash}`;
         return message;
@@ -132,14 +132,14 @@ export default class EmbarkJSPlasma {
       const gasPrice = 1000000;
       const receipt = await erc20.methods
         .approve(this.rootChain.plasmaContractAddress, amount)
-        .send({from: this.currentAddress, gasPrice, gas: 2000000});
+        .send({ from: this.currentAddress, gasPrice, gas: 2000000 });
       // Wait for the approve tx to be mined
       this.logger.info(`${amount} erc20 approved: ${receipt.transactionHash}. Waiting for confirmation...`);
       await confirmTransaction(this.web3, receipt.transactionHash);
       this.logger.info(`... ${receipt.transactionHash} confirmed.`);
     }
 
-    return this.rootChain.depositToken(depositTx, {from: this.currentAddress});
+    return this.rootChain.depositToken(depositTx, { from: this.currentAddress });
   }
 
   async transfer(toAddress, amount, currency = transaction.ETH_CURRENCY) {
@@ -270,7 +270,7 @@ export default class EmbarkJSPlasma {
       Number(exitData.utxo_pos.toString()),
       exitData.txbytes,
       exitData.proof,
-      {from}
+      { from }
     );
   }
 
@@ -316,12 +316,12 @@ export default class EmbarkJSPlasma {
       throw new Error(message);
     }
 
-    const {rootBalance, childBalances} = await this.balances();
+    const { rootBalance, childBalances } = await this.balances();
     this.state.account.address = this.currentAddress;
     this.state.account.rootBalance = rootBalance;
     this.state.account.childBalances = childBalances;
 
-    this.state.transactions = await this.childChain.getTransactions({address: this.currentAddress});
+    this.state.transactions = await this.childChain.getTransactions({ address: this.currentAddress });
 
     this.state.utxos = await this.childChain.getUtxos(this.currentAddress);
   }
