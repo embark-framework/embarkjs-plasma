@@ -1,6 +1,9 @@
 # EmbarkJS-Plasma
 EmbarkJS-Plasma is a convenience library for adding Plasma chain support to your DApp. It's meant to be used as an extension for [EmbarkJS](https://github.com/embark-framework/embark/packages/embarkjs), by being added as a property of EmbarkJS, ie `EmbarkJS.Plasma`.
 
+> **PLEASE NOTE**
+> This is completely alpha software and should not be used in a production environment.
+
 > NOTE: This library is meant to be used as a dependency of [`embark-plasma`](https://github.com/embark-framework/embark-plasma), however it can be used as a standalone library if so desired.
 
 The `embarkjs-plasma` plugin will:
