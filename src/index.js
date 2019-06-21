@@ -41,18 +41,24 @@ export default class EmbarkJSPlasma {
     };
   }
 
-  async init(web3, useGivenWeb3 = false) {
+  async init(embarkWeb3, useEmbarkWeb3 = false) {
     try {
       if (this.initing) {
         const message = "Already intializing the Plasma chain, please wait...";
         throw new Error(message);
       }
       this.initing = true;
-      if (useGivenWeb3) {
-        this.web3 = web3;
+
+      if (useEmbarkWeb3) { // web3 is being passed in and we should use that
+        this.web3 = new Web3(embarkWeb3.currentProvider || embarkWeb3.givenProvider, null, web3Options); // embark main process
       }
       else {
-        this.web3 = new Web3(web3.currentProvider || web3.givenProvider, null, web3Options);
+        // web3 being passed in could be metamask or could be coming from Embark
+        const embarkJsWeb3Provider = EmbarkJS.Blockchain.Providers["web3"];
+        if (!embarkJsWeb3Provider) { throw new Error("web3 cannot be found. Please ensure you have the 'embarkjs-connector-web3' plugin installed in your DApp."); }
+        const { web3 } = embarkJsWeb3Provider;
+
+        this.web3 = new Web3(web3.currentProvider || web3.givenProvider, null, web3Options); // running in the browser
       }
 
       // set up the Plasma chain
