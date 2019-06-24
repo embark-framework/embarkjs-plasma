@@ -8,17 +8,19 @@ import BigNumber from "bn.js";
 import ChildChain from "@omisego/omg-js-childchain";
 import RootChain from "@omisego/omg-js-rootchain";
 import Web3 from "web3";
-import { transaction } from "@omisego/omg-js-util";
+import {transaction} from "@omisego/omg-js-util";
 const ERC20_ABI = require("human-standard-token-abi");
 
-const web3Options = { transactionConfirmationBlocks: 1 };
+const web3Options = {transactionConfirmationBlocks: 1};
 
 export default class EmbarkJSPlasma {
-  constructor({ pluginConfig, logger }) {
+  constructor({pluginConfig, logger}) {
     this.logger = logger;
     this.initing = false;
     this.inited = false;
     this.currentAddress = "";
+    // TODO: Remove PK support in favour of signing in Embark proxy
+    this.currentPrivateKey = "";
     this.maxDeposit = 0;
     this.state = {
       account: {
@@ -41,7 +43,7 @@ export default class EmbarkJSPlasma {
     };
   }
 
-  async init(embarkWeb3, useEmbarkWeb3 = false) {
+  async init(embarkWeb3, useEmbarkWeb3 = false, configAccounts = []) {
     try {
       if (this.initing) {
         const message = "Already intializing the Plasma chain, please wait...";
@@ -55,8 +57,8 @@ export default class EmbarkJSPlasma {
       else {
         // web3 being passed in could be metamask or could be coming from Embark
         const embarkJsWeb3Provider = EmbarkJS.Blockchain.Providers["web3"];
-        if (!embarkJsWeb3Provider) { throw new Error("web3 cannot be found. Please ensure you have the 'embarkjs-connector-web3' plugin installed in your DApp."); }
-        const { web3 } = embarkJsWeb3Provider;
+        if (!embarkJsWeb3Provider) {throw new Error("web3 cannot be found. Please ensure you have the 'embarkjs-connector-web3' plugin installed in your DApp.");}
+        const {web3} = embarkJsWeb3Provider;
 
         this.web3 = new Web3(web3.currentProvider || web3.givenProvider, null, web3Options); // running in the browser
       }
@@ -65,9 +67,18 @@ export default class EmbarkJSPlasma {
       this.rootChain = new RootChain(this.web3, this.config.plasmaContractAddress);
       this.childChain = new ChildChain(this.config.watcherUrl); //, this.config.childChainUrl);
 
-      let accounts = await this.web3.eth.getAccounts();
-      const address = accounts.length > 1 ? accounts[1] : accounts[0]; // ignore the first account because it is our deployer account, we want the manually added account
-      this.currentAddress = address;
+      let accounts = [];
+      if (configAccounts.length) {
+        const account = configAccounts.length > 1 ? configAccounts[1] : configAccounts[0];
+        this.currentAddress = account.address;
+        this.currentPrivateKey = account.privateKey; // TODO: remove PK in favour of signing in Embark
+        this.web3.eth.accounts.wallet.add(account.privateKey);
+      }
+      else {
+        const accounts = await this.web3.eth.getAccounts();
+        const address = accounts.length > 1 ? accounts[1] : accounts[0]; // ignore the first account because it is our deployer account, we want the manually added account
+        this.currentAddress = address;
+      }
 
       // check account balance on the main chain
       // try {
@@ -118,8 +129,8 @@ export default class EmbarkJSPlasma {
       this.logger.info(`Depositing ${amount} wei...`);
       // ETH deposit
       try {
-        const receipt = await this.rootChain.depositEth(depositTx, amount, { from: this.currentAddress });
-        this.logger.trace(receipt);
+        const receipt = await this.rootChain.depositEth(depositTx, amount, {from: this.currentAddress});
+        this.logger.info(receipt);
         const message = `Successfully deposited ${amount} ${currency === transaction.ETH_CURRENCY ? "wei" : currency} in to the Plasma chain.\nView the transaction: https://rinkeby.etherscan.io/tx/${receipt.transactionHash}`;
         return message;
       } catch (e) {
@@ -138,14 +149,14 @@ export default class EmbarkJSPlasma {
       const gasPrice = 1000000;
       const receipt = await erc20.methods
         .approve(this.rootChain.plasmaContractAddress, amount)
-        .send({ from: this.currentAddress, gasPrice, gas: 2000000 });
+        .send({from: this.currentAddress, gasPrice, gas: 2000000});
       // Wait for the approve tx to be mined
       this.logger.info(`${amount} erc20 approved: ${receipt.transactionHash}. Waiting for confirmation...`);
       await confirmTransaction(this.web3, receipt.transactionHash);
       this.logger.info(`... ${receipt.transactionHash} confirmed.`);
     }
 
-    return this.rootChain.depositToken(depositTx, { from: this.currentAddress });
+    return this.rootChain.depositToken(depositTx, {from: this.currentAddress});
   }
 
   async transfer(toAddress, amount, currency = transaction.ETH_CURRENCY) {
@@ -160,55 +171,64 @@ export default class EmbarkJSPlasma {
       throw new Error(`No utxo big enough to cover the amount ${amount}`);
     }
 
-    const txBody = {
-      inputs: utxosToSpend,
-      outputs: [
-        {
-          owner: toAddress,
-          currency,
-          amount: amount.toString()
-        }
-      ]
-    };
+    // const txBody = {
+    //   inputs: utxosToSpend,
+    //   outputs: [
+    //     {
+    //       owner: toAddress,
+    //       currency,
+    //       amount: amount.toString()
+    //     }
+    //   ]
+    // };
 
-    const bnAmount = new BigNumber(utxosToSpend[0].amount);
-    if (bnAmount.gt(new BigNumber(amount))) {
-      // Need to add a 'change' output
-      const CHANGE_AMOUNT = bnAmount.sub(new BigNumber(amount));
-      txBody.outputs.push({
-        owner: this.currentAddress,
-        currency,
-        amount: CHANGE_AMOUNT
-      });
-    }
+    // const bnAmount = new BigNumber(utxosToSpend[0].amount);
+    // if (bnAmount.gt(new BigNumber(amount))) {
+    //   // Need to add a 'change' output
+    //   const CHANGE_AMOUNT = bnAmount.sub(new BigNumber(amount));
+    //   txBody.outputs.push({
+    //     owner: this.currentAddress,
+    //     currency,
+    //     amount: CHANGE_AMOUNT
+    //   });
+    // }
 
-    if (currency !== transaction.ETH_CURRENCY && utxosToSpend.length > 1) {
-      // The fee input can be returned
-      txBody.outputs.push({
-        owner: this.currentAddress,
-        currency: utxosToSpend[utxosToSpend.length - 1].currency,
-        amount: utxosToSpend[utxosToSpend.length - 1].amount
-      });
-    }
+    // if (currency !== transaction.ETH_CURRENCY && utxosToSpend.length > 1) {
+    //   // The fee input can be returned
+    //   txBody.outputs.push({
+    //     owner: this.currentAddress,
+    //     currency: utxosToSpend[utxosToSpend.length - 1].currency,
+    //     amount: utxosToSpend[utxosToSpend.length - 1].amount
+    //   });
+    // }
+    const txBody = transaction.createTransactionBody(this.currentAddress, utxosToSpend, toAddress, amount, currency);
 
     // Get the transaction data
     const typedData = transaction.getTypedData(txBody, verifyingContract);
 
-    // We should really sign each input separately but in this we know that they're all
-    // from the same address, so we can sign once and use that signature for each input.
-    //
-    // const sigs = await Promise.all(utxosToSpend.map(input => signTypedData(web3, web3.utils.toChecksumAddress(from), typedData)))
-    //
-    const signature = await signTypedData(
-      this.web3,
-      this.web3.utils.toChecksumAddress(this.currentAddress),
-      JSON.stringify(typedData)
-    );
+    let signature;
+    if (this.isMetaMask) {
+
+      // We should really sign each input separately but in this we know that they're all
+      // from the same address, so we can sign once and use that signature for each input.
+      //
+      // const sigs = await Promise.all(utxosToSpend.map(input => signTypedData(web3, web3.utils.toChecksumAddress(from), typedData)))
+      //
+      signature = await signTypedData(
+        this.web3,
+        this.web3.utils.toChecksumAddress(this.currentAddress),
+        JSON.stringify(typedData)
+      );
+    } else {
+      // Sign the hashed data (once for each input spent)
+      signature = await this.childChain.signTransaction(typedData, [this.currentPrivateKey]);
+      //signature = await this.web3.eth.accounts.signTransaction(typedData, this.currentPrivateKey);
+    }
 
     const sigs = new Array(utxosToSpend.length).fill(signature);
 
     // Build the signed transaction
-    const signedTx = this.childChain.buildSignedTransaction(typedData, sigs);
+    const signedTx = this.childChain.buildSignedTransaction(typedData, this.isMetaMask ? sigs : signature);
     // Submit the signed transaction to the childchain
     const result = await this.childChain.submitTransaction(signedTx);
 
@@ -219,6 +239,14 @@ export default class EmbarkJSPlasma {
       }`;
 
     return message;
+  }
+
+  get isMetaMask() {
+    return this.web3 &&
+      ((this.web3.currentProvider &&
+        this.web3.currentProvider.isMetaMask) ||
+        (this.web3.givenProvider &&
+          this.web3.givenProvider.isMetaMask));
   }
 
   async exitAllUtxos(fromAddress) {
@@ -276,7 +304,7 @@ export default class EmbarkJSPlasma {
       Number(exitData.utxo_pos.toString()),
       exitData.txbytes,
       exitData.proof,
-      { from }
+      {from}
     );
   }
 
@@ -322,12 +350,12 @@ export default class EmbarkJSPlasma {
       throw new Error(message);
     }
 
-    const { rootBalance, childBalances } = await this.balances();
+    const {rootBalance, childBalances} = await this.balances();
     this.state.account.address = this.currentAddress;
     this.state.account.rootBalance = rootBalance;
     this.state.account.childBalances = childBalances;
 
-    this.state.transactions = await this.childChain.getTransactions({ address: this.currentAddress });
+    this.state.transactions = await this.childChain.getTransactions({address: this.currentAddress});
 
     this.state.utxos = await this.childChain.getUtxos(this.currentAddress);
   }

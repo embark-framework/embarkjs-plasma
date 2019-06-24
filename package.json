@@ -1,6 +1,6 @@
 {
   "name": "embarkjs-plasma",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "EmbarkJS library for the OmiseGO Plasma plugin for Embark",
   "main": "dist/index.js",
   "browser": {
