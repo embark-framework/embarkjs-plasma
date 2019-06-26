@@ -20,7 +20,7 @@ Please see [`embark-plasma`](https://github.com/embark-framework/embark-plasma) 
 
 ## Current limitations and known issues
 1. The plugin currently only supports OMG's Samrong network and `v0.2` of the OMG SDK. The root chain is a contract on Rinkeby and the Plasma chain runs on Samrong. Chain creation for development purposes will be added in future versions.
-2. The DApp must use Metamask. The accounts configured in the blockchain config cannot be used in the DApp. This is a limitation of Embark itself, and will hopefully be updated soon.
+2. The DApp can use Metamask OR accounts configured in the contracts config of Embark. Due to this support, the private keys of the accounts configured in Embark will be passed to `EmbarkJS.Plasma` and will be visible in the code generated `embarkjs.js` file. We are hoping to remove the need to pass PK's around soon.
 
 ## Available properties/functions
 `embarkjs-plasma` exposes functions that are meant to make DApp interaction with Plasma chains easier. The following functions and proeprties are available.
