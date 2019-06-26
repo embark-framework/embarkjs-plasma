@@ -14,14 +14,14 @@ const ERC20_ABI = require("human-standard-token-abi");
 const web3Options = {transactionConfirmationBlocks: 1};
 
 export default class EmbarkJSPlasma {
-  constructor({pluginConfig, logger}) {
+  constructor({pluginConfig, logger, accounts}) {
     this.logger = logger;
     this.initing = false;
     this.inited = false;
     this.currentAddress = "";
     // TODO: Remove PK support in favour of signing in Embark proxy
     this.currentPrivateKey = "";
-    this.maxDeposit = 0;
+    this.configAccounts = accounts || [];
     this.state = {
       account: {
         address: "",
@@ -43,7 +43,7 @@ export default class EmbarkJSPlasma {
     };
   }
 
-  async init(embarkWeb3, useEmbarkWeb3 = false, configAccounts = []) {
+  async init(embarkWeb3, useEmbarkWeb3 = false) {
     try {
       if (this.initing) {
         const message = "Already intializing the Plasma chain, please wait...";
@@ -68,8 +68,8 @@ export default class EmbarkJSPlasma {
       this.childChain = new ChildChain(this.config.watcherUrl); //, this.config.childChainUrl);
 
       let accounts = [];
-      if (configAccounts.length) {
-        const account = configAccounts.length > 1 ? configAccounts[1] : configAccounts[0];
+      if (!this.isMetaMask && this.configAccounts.length) {
+        const account = this.configAccounts.length > 1 ? this.configAccounts[1] : this.configAccounts[0];
         this.currentAddress = account.address;
         this.currentPrivateKey = account.privateKey; // TODO: remove PK in favour of signing in Embark
         this.web3.eth.accounts.wallet.add(account.privateKey);
@@ -79,18 +79,6 @@ export default class EmbarkJSPlasma {
         const address = accounts.length > 1 ? accounts[1] : accounts[0]; // ignore the first account because it is our deployer account, we want the manually added account
         this.currentAddress = address;
       }
-
-      // check account balance on the main chain
-      // try {
-      //   this.maxDeposit = await this.web3.eth.getBalance(this.currentAddress);
-      //   if (!this.maxDeposit || new BigNumber(this.maxDeposit).lte(0)) {
-      //     throw new Error("The configured account does not have enough funds. Please make sure this account has Rinkeby ETH.");
-      //   }
-      //   this.maxDeposit = new BigNumber(this.maxDeposit);
-      // }
-      // catch (e) {
-      //   this.logger.warn(`Error getting balance for account ${this.currentAddress}: ${e}`);
-      // }
 
       // set lifecycle state vars
       this.initing = false;
@@ -114,14 +102,6 @@ export default class EmbarkJSPlasma {
       const message = "You must deposit more than 0 wei.";
       throw new Error(message);
     }
-    // if (amount.gt(this.maxDeposit) && this.maxDeposit.gt(0)) {
-    //   // recheck balance in case it was updated in a recent tx
-    //   this.maxDeposit = await this.web3.eth.getBalance(this.currentAddress);
-    //   if (amount.gt(this.maxDeposit)) {
-    //     const message = `You do not have enough funds for this deposit. Please deposit more funds in to ${this.currentAddress} and then try again.`;
-    //     throw new Error(message);
-    //   }
-    // }
     // Create the deposit transaction
     const depositTx = transaction.encodeDeposit(this.currentAddress, amount, currency);
 
@@ -171,64 +151,25 @@ export default class EmbarkJSPlasma {
       throw new Error(`No utxo big enough to cover the amount ${amount}`);
     }
 
-    // const txBody = {
-    //   inputs: utxosToSpend,
-    //   outputs: [
-    //     {
-    //       owner: toAddress,
-    //       currency,
-    //       amount: amount.toString()
-    //     }
-    //   ]
-    // };
-
-    // const bnAmount = new BigNumber(utxosToSpend[0].amount);
-    // if (bnAmount.gt(new BigNumber(amount))) {
-    //   // Need to add a 'change' output
-    //   const CHANGE_AMOUNT = bnAmount.sub(new BigNumber(amount));
-    //   txBody.outputs.push({
-    //     owner: this.currentAddress,
-    //     currency,
-    //     amount: CHANGE_AMOUNT
-    //   });
-    // }
-
-    // if (currency !== transaction.ETH_CURRENCY && utxosToSpend.length > 1) {
-    //   // The fee input can be returned
-    //   txBody.outputs.push({
-    //     owner: this.currentAddress,
-    //     currency: utxosToSpend[utxosToSpend.length - 1].currency,
-    //     amount: utxosToSpend[utxosToSpend.length - 1].amount
-    //   });
-    // }
     const txBody = transaction.createTransactionBody(this.currentAddress, utxosToSpend, toAddress, amount, currency);
 
     // Get the transaction data
     const typedData = transaction.getTypedData(txBody, verifyingContract);
 
-    let signature;
-    if (this.isMetaMask) {
+    let signature = await signTypedData(
+      this.web3,
+      this.web3.utils.toChecksumAddress(this.currentAddress),
+      typedData,
+      this.childChain,
+      this.currentPrivateKey
+    );
 
-      // We should really sign each input separately but in this we know that they're all
-      // from the same address, so we can sign once and use that signature for each input.
-      //
-      // const sigs = await Promise.all(utxosToSpend.map(input => signTypedData(web3, web3.utils.toChecksumAddress(from), typedData)))
-      //
-      signature = await signTypedData(
-        this.web3,
-        this.web3.utils.toChecksumAddress(this.currentAddress),
-        JSON.stringify(typedData)
-      );
-    } else {
-      // Sign the hashed data (once for each input spent)
-      signature = await this.childChain.signTransaction(typedData, [this.currentPrivateKey]);
-      //signature = await this.web3.eth.accounts.signTransaction(typedData, this.currentPrivateKey);
-    }
-
-    const sigs = new Array(utxosToSpend.length).fill(signature);
+    // ensure we have an array
+    signature = signature instanceof Array ? signature : [signature];
 
     // Build the signed transaction
-    const signedTx = this.childChain.buildSignedTransaction(typedData, this.isMetaMask ? sigs : signature);
+    const signedTx = this.childChain.buildSignedTransaction(typedData, signature);
+
     // Submit the signed transaction to the childchain
     const result = await this.childChain.submitTransaction(signedTx);
 
@@ -261,6 +202,7 @@ export default class EmbarkJSPlasma {
       throw new Error(message);
     }
     const errors = [];
+    const messages = [];
     utxos.forEach(async utxo => {
       const exitData = await this.childChain.getExitData(utxo);
 
@@ -275,11 +217,11 @@ export default class EmbarkJSPlasma {
 
           }
         );
-        return `Exited UTXO from address ${fromAddress} with value ${
+        messages.push(`Exited UTXO from address ${fromAddress} with value ${
           utxo.amount
           }. View the transaction: https://rinkeby.etherscan.io/tx/${
           receipt.transactionHash
-          }`;
+          }`);
       } catch (e) {
         const message = `Error exiting the Plasma chain for UTXO ${JSON.stringify(
           utxo
@@ -290,6 +232,7 @@ export default class EmbarkJSPlasma {
     if (errors.length) {
       throw new Error(errors.join("\n\n"));
     }
+    return messages.join("\n");
   }
 
   async exitUtxo(from, utxoToExit) {

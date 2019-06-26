@@ -94,8 +94,18 @@ export function selectUtxos(utxos, amount, currency, includeFee) {
   }
 }
 
-export function signTypedData(web3, signer, data) {
-  return web3.currentProvider.send('eth_signTypedData_v3', [signer, data]);
+export async function signTypedData(web3, signer, data, childChain, pk) {
+  try {
+    return await web3.currentProvider.send('eth_signTypedData_v3', [signer, JSON.stringify(data)]);
+  } catch(e) {
+    if (e.message.includes("The method eth_signTypedData_v3 does not exist/is not available")) {
+      // the node we're connecting to doesn't support this message, so we have to sign it ourselves.
+      // TODO: this needs to be removed along with passing in the account's private key in favour of
+      // intercepting this request in embark and signing the tx on the embark side.
+      // Once we get ride of the PK, we also don't need to pass in the childchain param
+      return await childChain.signTransaction(data, [pk]);
+    }
+  }
 }
 
 export function normalizeUrl(url) {
