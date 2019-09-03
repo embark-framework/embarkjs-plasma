@@ -1,5 +1,5 @@
 import BigNumber from "bn.js";
-import { transaction } from "@omisego/omg-js-util";
+import {transaction} from "@omisego/omg-js-util";
 
 const DEFAULT_INTERVAL = 1000;
 const DEFAULT_BLOCKS_TO_WAIT = 13;
@@ -94,16 +94,13 @@ export function selectUtxos(utxos, amount, currency, includeFee) {
   }
 }
 
-export async function signTypedData(web3, signer, data, childChain, pk) {
+export async function signTypedData(web3, signer, data) {
   try {
     return await web3.currentProvider.send('eth_signTypedData_v3', [signer, JSON.stringify(data)]);
-  } catch(e) {
+  } catch (e) {
     if (e.message.includes("The method eth_signTypedData_v3 does not exist/is not available")) {
-      // the node we're connecting to doesn't support this message, so we have to sign it ourselves.
-      // TODO: this needs to be removed along with passing in the account's private key in favour of
-      // intercepting this request in embark and signing the tx on the embark side.
-      // Once we get ride of the PK, we also don't need to pass in the childchain param
-      return await childChain.signTransaction(data, [pk]);
+      // the node we're connecting to doesn't support this RPC call
+      throw new Error("The node does not support signing of typed data. Either enable a web3 wallet like MetaMask that can intercept this RPC call, or connect to a node that supports signing of typed data (ie the Embark node).");
     }
   }
 }

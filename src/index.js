@@ -14,14 +14,12 @@ const ERC20_ABI = require("human-standard-token-abi");
 const web3Options = {transactionConfirmationBlocks: 1};
 
 export default class EmbarkJSPlasma {
-  constructor({pluginConfig, logger, accounts}) {
+  constructor({pluginConfig, logger}, web3async) {
     this.logger = logger;
+    this.web3 = web3async ? await web3async : null;
     this.initing = false;
     this.inited = false;
     this.currentAddress = "";
-    // TODO: Remove PK support in favour of signing in Embark proxy
-    this.currentPrivateKey = "";
-    this.configAccounts = accounts || [];
     this.state = {
       account: {
         address: "",
@@ -36,14 +34,17 @@ export default class EmbarkJSPlasma {
 
     // plugin opts
     this.config = {
+      rootChainAccount: pluginConfig.ROOTCHAIN_ACCOUNT,
       plasmaContractAddress: pluginConfig.PLASMA_CONTRACT_ADDRESS || "0x740ecec4c0ee99c285945de8b44e9f5bfb71eea7",
       watcherUrl: normalizeUrl(pluginConfig.WATCHER_URL || "https://watcher.samrong.omg.network/"),
       childChainUrl: normalizeUrl(pluginConfig.CHILDCHAIN_URL || "https://samrong.omg.network/"),
       childChainExplorerUrl: normalizeUrl(pluginConfig.CHILDCHAIN_EXPLORER_URL || "https://quest.samrong.omg.network")
     };
+
+    this.init();
   }
 
-  async init(embarkWeb3, useEmbarkWeb3 = false) {
+  async init() {
     try {
       if (this.initing) {
         const message = "Already intializing the Plasma chain, please wait...";
@@ -51,8 +52,8 @@ export default class EmbarkJSPlasma {
       }
       this.initing = true;
 
-      if (useEmbarkWeb3) { // web3 is being passed in and we should use that
-        this.web3 = new Web3(embarkWeb3.currentProvider || embarkWeb3.givenProvider, null, web3Options); // embark main process
+      if (this.web3) { // web3 is being passed in and we should use that
+        this.web3 = new Web3(this.web3.currentProvider || this.web3.givenProvider, null, web3Options); // embark main process
       }
       else {
         // web3 being passed in could be metamask or could be coming from Embark
@@ -67,18 +68,11 @@ export default class EmbarkJSPlasma {
       this.rootChain = new RootChain(this.web3, this.config.plasmaContractAddress);
       this.childChain = new ChildChain(this.config.watcherUrl); //, this.config.childChainUrl);
 
-      let accounts = [];
-      if (!this.isMetaMask && this.configAccounts.length) {
-        const account = this.configAccounts.length > 1 ? this.configAccounts[1] : this.configAccounts[0];
-        this.currentAddress = account.address;
-        this.currentPrivateKey = account.privateKey; // TODO: remove PK in favour of signing in Embark
-        this.web3.eth.accounts.wallet.add(account.privateKey);
-      }
-      else {
-        const accounts = await this.web3.eth.getAccounts();
-        const address = accounts.length > 1 ? accounts[1] : accounts[0]; // ignore the first account because it is our deployer account, we want the manually added account
-        this.currentAddress = address;
-      }
+      const accounts = await this.web3.eth.getAccounts();
+      // use configured root chain account (in plugin config) or determine account to use with:
+      // 1. If metamask is enabled, use the first account
+      // 2. If we are using metamask, use the last ccount returned with web3.eth.getAccounts()
+      this.currentAddress = this.config.rootChainAccount || (this.isMetaMask ? accounts[0] : accounts[accounts.length - 1]);
 
       // set lifecycle state vars
       this.initing = false;
@@ -90,6 +84,58 @@ export default class EmbarkJSPlasma {
       throw new Error(message);
     }
   }
+
+  // async init(embarkWeb3, useEmbarkWeb3 = false, configAccounts = []) {
+  //   try {
+  //     if (this.initing) {
+  //       const message = "Already intializing the Plasma chain, please wait...";
+  //       throw new Error(message);
+  //     }
+  //     this.initing = true;
+  //     this.configAccounts = configAccounts;
+
+  //     if (useEmbarkWeb3) { // web3 is being passed in and we should use that
+  //       this.web3 = new Web3(embarkWeb3.currentProvider || embarkWeb3.givenProvider, null, web3Options); // embark main process
+  //     }
+  //     else {
+  //       // web3 being passed in could be metamask or could be coming from Embark
+  //       const embarkJsWeb3Provider = EmbarkJS.Blockchain.Providers["web3"];
+  //       if (!embarkJsWeb3Provider) {throw new Error("web3 cannot be found. Please ensure you have the 'embarkjs-connector-web3' plugin installed in your DApp.");}
+  //       const {web3} = embarkJsWeb3Provider;
+
+  //       this.web3 = new Web3(web3.currentProvider || web3.givenProvider, null, web3Options); // running in the browser
+  //     }
+
+  //     // set up the Plasma chain
+  //     this.rootChain = new RootChain(this.web3, this.config.plasmaContractAddress);
+  //     this.childChain = new ChildChain(this.config.watcherUrl); //, this.config.childChainUrl);
+
+  //     let accounts = [];
+  //     if (!this.isMetaMask && this.configAccounts.length) {
+  //       const account = this.configAccounts.length > 1 ? this.configAccounts[1] : this.configAccounts[0];
+  //       if (!account || !account.privateKey) {
+  //         throw new Error ("Error using configured accounts: please ensure contracts configu has been set up to use a mnemonic, privateKey, or privateKeyFile.");
+  //       }
+  //       this.currentAddress = account.address;
+  //       this.currentPrivateKey = account.privateKey; // TODO: remove PK in favour of signing in Embark
+  //       this.web3.eth.accounts.wallet.add(account.privateKey);
+  //     }
+  //     else {
+  //       const accounts = await this.web3.eth.getAccounts();
+  //       const address = accounts.length > 1 ? accounts[1] : accounts[0]; // ignore the first account because it is our deployer account, we want the manually added account
+  //       this.currentAddress = address;
+  //     }
+
+  //     // set lifecycle state vars
+  //     this.initing = false;
+  //     this.inited = true;
+
+  //     await this.updateState();
+  //   } catch (e) {
+  //     const message = `Error initializing Plasma chain: ${e}`;
+  //     throw new Error(message);
+  //   }
+  // }
 
   async deposit(amount, currency = transaction.ETH_CURRENCY, approveDeposit = false) {
 
@@ -155,31 +201,32 @@ export default class EmbarkJSPlasma {
 
     // Get the transaction data
     const typedData = transaction.getTypedData(txBody, verifyingContract);
+    try {
+      let signature = await signTypedData(
+        this.web3,
+        this.web3.utils.toChecksumAddress(this.currentAddress),
+        typedData
+      );
 
-    let signature = await signTypedData(
-      this.web3,
-      this.web3.utils.toChecksumAddress(this.currentAddress),
-      typedData,
-      this.childChain,
-      this.currentPrivateKey
-    );
+      // ensure we have an array
+      signature = signature instanceof Array ? signature : [signature];
 
-    // ensure we have an array
-    signature = signature instanceof Array ? signature : [signature];
+      // Build the signed transaction
+      const signedTx = this.childChain.buildSignedTransaction(typedData, signature);
 
-    // Build the signed transaction
-    const signedTx = this.childChain.buildSignedTransaction(typedData, signature);
+      // Submit the signed transaction to the childchain
+      const result = await this.childChain.submitTransaction(signedTx);
 
-    // Submit the signed transaction to the childchain
-    const result = await this.childChain.submitTransaction(signedTx);
+      const message = `Successfully submitted tx on the child chain: ${JSON.stringify(
+        result
+      )}\nView the transaction: ${this.config.childChainExplorerUrl}transaction/${
+        result.txhash
+        }`;
 
-    const message = `Successfully submitted tx on the child chain: ${JSON.stringify(
-      result
-    )}\nView the transaction: ${this.config.childChainExplorerUrl}transaction/${
-      result.txhash
-      }`;
-
-    return message;
+      return message;
+    } catch (err) {
+      return err;
+    }
   }
 
   get isMetaMask() {
