@@ -14,9 +14,14 @@ const ERC20_ABI = require("human-standard-token-abi");
 const web3Options = {transactionConfirmationBlocks: 1};
 
 export default class EmbarkJSPlasma {
-  constructor({pluginConfig, logger}, web3async) {
-    this.logger = logger;
-    this.web3 = web3async ? await web3async : null;
+  constructor({pluginConfig, logger}) {
+    this.logger = logger || {
+      info: console.log,
+      warn: console.warn,
+      error: console.error,
+      trace: console.trace
+    };
+    this.web3 = null;
     this.initing = false;
     this.inited = false;
     this.currentAddress = "";
@@ -44,7 +49,7 @@ export default class EmbarkJSPlasma {
     this.init();
   }
 
-  async init() {
+  async init(web3) {
     try {
       if (this.initing) {
         const message = "Already intializing the Plasma chain, please wait...";
@@ -52,8 +57,8 @@ export default class EmbarkJSPlasma {
       }
       this.initing = true;
 
-      if (this.web3) { // web3 is being passed in and we should use that
-        this.web3 = new Web3(this.web3.currentProvider || this.web3.givenProvider, null, web3Options); // embark main process
+      if (web3) { // web3 is being passed in and we should use that
+        this.web3 = new Web3(web3.currentProvider || web3.givenProvider, null, web3Options); // embark main process
       }
       else {
         // web3 being passed in could be metamask or could be coming from Embark
