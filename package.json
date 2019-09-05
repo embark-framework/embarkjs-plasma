@@ -55,7 +55,7 @@
     "@omisego/omg-js-rootchain": "2.0.0-v0.2",
     "@omisego/omg-js-util": "2.0.0-v0.2",
     "human-standard-token-abi": "2.0.0",
-    "web3": "1.0.0-beta.55"
+    "web3": "1.2.1"
   },
   "devDependencies": {
     "@babel/cli": "7.2.3",

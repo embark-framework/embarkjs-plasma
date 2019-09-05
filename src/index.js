@@ -45,8 +45,6 @@ export default class EmbarkJSPlasma {
       childChainUrl: normalizeUrl(pluginConfig.CHILDCHAIN_URL || "https://samrong.omg.network/"),
       childChainExplorerUrl: normalizeUrl(pluginConfig.CHILDCHAIN_EXPLORER_URL || "https://quest.samrong.omg.network")
     };
-
-    this.init();
   }
 
   async init(web3) {
@@ -61,12 +59,15 @@ export default class EmbarkJSPlasma {
         this.web3 = new Web3(web3.currentProvider || web3.givenProvider, null, web3Options); // embark main process
       }
       else {
-        // web3 being passed in could be metamask or could be coming from Embark
-        const embarkJsWeb3Provider = EmbarkJS.Blockchain.Providers["web3"];
-        if (!embarkJsWeb3Provider) {throw new Error("web3 cannot be found. Please ensure you have the 'embarkjs-connector-web3' plugin installed in your DApp.");}
-        const {web3} = embarkJsWeb3Provider;
+        // TODO: Here we need to either get web3 in order of dappConnection
 
-        this.web3 = new Web3(web3.currentProvider || web3.givenProvider, null, web3Options); // running in the browser
+        // web3 being passed in could be metamask or could be coming from Embark
+        // const EmbarkJS = require(dappPath("./embarkArtifacts/modules/embarkjs"));
+        // const embarkJsWeb3Provider = EmbarkJS.Blockchain.Providers["web3"];
+        // if (!embarkJsWeb3Provider) {throw new Error("web3 cannot be found. Please ensure you have the 'embarkjs-connector-web3' plugin installed in your DApp.");}
+        // const {web3} = embarkJsWeb3Provider;
+
+        // this.web3 = new Web3(web3.currentProvider || web3.givenProvider, null, web3Options); // running in the browser
       }
 
       // set up the Plasma chain
@@ -76,7 +77,7 @@ export default class EmbarkJSPlasma {
       const accounts = await this.web3.eth.getAccounts();
       // use configured root chain account (in plugin config) or determine account to use with:
       // 1. If metamask is enabled, use the first account
-      // 2. If we are using metamask, use the last ccount returned with web3.eth.getAccounts()
+      // 2. Otherwise, use the last ccount returned with web3.eth.getAccounts()
       this.currentAddress = this.config.rootChainAccount || (this.isMetaMask ? accounts[0] : accounts[accounts.length - 1]);
 
       // set lifecycle state vars
@@ -87,6 +88,18 @@ export default class EmbarkJSPlasma {
     } catch (e) {
       const message = `Error initializing Plasma chain: ${e}`;
       throw new Error(message);
+    }
+  }
+
+  async getBrowserWeb3() {
+    if (window.ethereum) {
+      this.web3 = new Web3(window.ethereum, null, web3Options);
+      const accounts = await window.ethereum.enable();
+      this.web3.eth.defaultAccount = accounts[0];
+    } else if (window.web3) {
+      this.web3 = new Web3(window.web3.currentProvider, null, web3Options);
+    } else {
+      throw new Error('Non-Ethereum browser detected. You should use MetaMask!');
     }
   }
 
