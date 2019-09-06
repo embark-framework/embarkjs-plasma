@@ -104,10 +104,3 @@ export async function signTypedData(web3, signer, data) {
     }
   }
 }
-
-export function normalizeUrl(url) {
-  if (!url.endsWith("/")) {
-    url += "/";
-  }
-  return url;
-}

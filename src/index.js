@@ -1,6 +1,5 @@
 import {
   confirmTransaction,
-  normalizeUrl,
   selectUtxos,
   signTypedData
 } from "./utils";
@@ -38,13 +37,7 @@ export default class EmbarkJSPlasma {
     this.childChain = null;
 
     // plugin opts
-    this.config = {
-      rootChainAccount: pluginConfig.ROOTCHAIN_ACCOUNT,
-      plasmaContractAddress: pluginConfig.PLASMA_CONTRACT_ADDRESS || "0x740ecec4c0ee99c285945de8b44e9f5bfb71eea7",
-      watcherUrl: normalizeUrl(pluginConfig.WATCHER_URL || "https://watcher.samrong.omg.network/"),
-      childChainUrl: normalizeUrl(pluginConfig.CHILDCHAIN_URL || "https://samrong.omg.network/"),
-      childChainExplorerUrl: normalizeUrl(pluginConfig.CHILDCHAIN_EXPLORER_URL || "https://quest.samrong.omg.network")
-    };
+    this.config = pluginConfig;
   }
 
   async init(web3) {
@@ -59,20 +52,17 @@ export default class EmbarkJSPlasma {
         this.web3 = new Web3(web3.currentProvider || web3.givenProvider, null, web3Options); // embark main process
       }
       else {
-        // TODO: Here we need to either get web3 in order of dappConnection
-
-        // web3 being passed in could be metamask or could be coming from Embark
-        // const EmbarkJS = require(dappPath("./embarkArtifacts/modules/embarkjs"));
-        // const embarkJsWeb3Provider = EmbarkJS.Blockchain.Providers["web3"];
-        // if (!embarkJsWeb3Provider) {throw new Error("web3 cannot be found. Please ensure you have the 'embarkjs-connector-web3' plugin installed in your DApp.");}
-        // const {web3} = embarkJsWeb3Provider;
-
-        // this.web3 = new Web3(web3.currentProvider || web3.givenProvider, null, web3Options); // running in the browser
+        const isConnected = await this.doConnect(this.config.dappConnection);
+        if (!isConnected) {
+          this.logger.error(`Could not connect web3 to any of the following connections: ${this.config.dappConnection.join(", ")}`);
+        } else {
+          this.logger.info("Successfully connected to an Ethereum node");
+        }
       }
 
       // set up the Plasma chain
       this.rootChain = new RootChain(this.web3, this.config.plasmaContractAddress);
-      this.childChain = new ChildChain(this.config.watcherUrl); //, this.config.childChainUrl);
+      this.childChain = new ChildChain(this.config.watcherUrl, this.config.childChainUrl);
 
       const accounts = await this.web3.eth.getAccounts();
       // use configured root chain account (in plugin config) or determine account to use with:
@@ -103,57 +93,57 @@ export default class EmbarkJSPlasma {
     }
   }
 
-  // async init(embarkWeb3, useEmbarkWeb3 = false, configAccounts = []) {
-  //   try {
-  //     if (this.initing) {
-  //       const message = "Already intializing the Plasma chain, please wait...";
-  //       throw new Error(message);
-  //     }
-  //     this.initing = true;
-  //     this.configAccounts = configAccounts;
+  async doConnect(connectionList) {
 
-  //     if (useEmbarkWeb3) { // web3 is being passed in and we should use that
-  //       this.web3 = new Web3(embarkWeb3.currentProvider || embarkWeb3.givenProvider, null, web3Options); // embark main process
-  //     }
-  //     else {
-  //       // web3 being passed in could be metamask or could be coming from Embark
-  //       const embarkJsWeb3Provider = EmbarkJS.Blockchain.Providers["web3"];
-  //       if (!embarkJsWeb3Provider) {throw new Error("web3 cannot be found. Please ensure you have the 'embarkjs-connector-web3' plugin installed in your DApp.");}
-  //       const {web3} = embarkJsWeb3Provider;
+    const checkConnect = async () => {
+      try {
+        const accounts = await this.web3.eth.getAccounts();
+        this.web3.eth.defaultAccount = accounts[0];
+        return true;
+      } catch (err) {
+        console.error("ERROR CHECKING CONNECTION: " + err.message || err);
+        this.web3.setProvider(null);
+        return false;
+      }
+    };
 
-  //       this.web3 = new Web3(web3.currentProvider || web3.givenProvider, null, web3Options); // running in the browser
-  //     }
+    const connectWeb3 = async () => {
+      if (window && window.ethereum) {
+        this.web3 = new Web3(window.ethereum, null, web3Options);
+        await window.ethereum.enable();
+      } else if (window && window.web3) { // legacy
+        this.web3 = new Web3(window.web3.currentProvider, null, web3Options);
+      } else {
+        return false;
+      }
+      return checkConnect();
+    };
 
-  //     // set up the Plasma chain
-  //     this.rootChain = new RootChain(this.web3, this.config.plasmaContractAddress);
-  //     this.childChain = new ChildChain(this.config.watcherUrl); //, this.config.childChainUrl);
+    const connectWebsocket = async (url) => {
+      this.web3 = new Web3(new Web3.providers.WebsocketProvider(url));
+      return checkConnect();
+    };
 
-  //     let accounts = [];
-  //     if (!this.isMetaMask && this.configAccounts.length) {
-  //       const account = this.configAccounts.length > 1 ? this.configAccounts[1] : this.configAccounts[0];
-  //       if (!account || !account.privateKey) {
-  //         throw new Error ("Error using configured accounts: please ensure contracts configu has been set up to use a mnemonic, privateKey, or privateKeyFile.");
-  //       }
-  //       this.currentAddress = account.address;
-  //       this.currentPrivateKey = account.privateKey; // TODO: remove PK in favour of signing in Embark
-  //       this.web3.eth.accounts.wallet.add(account.privateKey);
-  //     }
-  //     else {
-  //       const accounts = await this.web3.eth.getAccounts();
-  //       const address = accounts.length > 1 ? accounts[1] : accounts[0]; // ignore the first account because it is our deployer account, we want the manually added account
-  //       this.currentAddress = address;
-  //     }
+    const connectHttp = async (url) => {
+      this.web3 = new Web3(new Web3.providers.HttpProvider(url));
+      return checkConnect();
+    };
 
-  //     // set lifecycle state vars
-  //     this.initing = false;
-  //     this.inited = true;
-
-  //     await this.updateState();
-  //   } catch (e) {
-  //     const message = `Error initializing Plasma chain: ${e}`;
-  //     throw new Error(message);
-  //   }
-  // }
+    for (let connectionString of connectionList) {
+      try {
+        if (connectionString === '$WEB3' && await connectWeb3(connectionString)) {
+          return true;
+        } else if ((/^wss?:\/\//).test(connectionString) && await connectWebsocket(connectionString)) {
+          return true;
+        } else if (await connectHttp(connectionString)) {
+          return true;
+        }
+      } catch (_err) {
+        continue;
+      }
+    }
+    return false;
+  };
 
   async deposit(amount, currency = transaction.ETH_CURRENCY, approveDeposit = false) {
 
