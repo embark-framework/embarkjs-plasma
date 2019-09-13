@@ -1,5 +1,5 @@
 import BigNumber from "bn.js";
-import {transaction} from "@omisego/omg-js-util";
+import { transaction } from "@omisego/omg-js-util";
 
 const DEFAULT_INTERVAL = 1000;
 const DEFAULT_BLOCKS_TO_WAIT = 13;
@@ -96,9 +96,10 @@ export function selectUtxos(utxos, amount, currency, includeFee) {
 
 export async function signTypedData(web3, signer, data) {
   try {
-    return await web3.currentProvider.send('eth_signTypedData_v3', [signer, JSON.stringify(data)]);
+    data = JSON.stringify(data);
+    return await web3.currentProvider.send('eth_signTypedData_v3', [signer, data]);
   } catch (e) {
-    if (e.message.includes("The method eth_signTypedData_v3 does not exist/is not available")) {
+    if (/the method eth_signTypedData_v3 does not exist\/is not available/i.test(e.message)) {
       // the node we're connecting to doesn't support this RPC call
       throw new Error("The node does not support signing of typed data. Either enable a web3 wallet like MetaMask that can intercept this RPC call, or connect to a node that supports signing of typed data (ie the Embark node).");
     }

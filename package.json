@@ -20,7 +20,7 @@
     "lint": "./node_modules/.bin/eslint src/",
     "babel": "cross-env BABEL_ENV=node babel --out-dir dist src --source-maps",
     "build": "npm-run-all build:**",
-    "build:browser": "cross-env BABEL_ENV=browser babel src --extensions \".js\" --out-dir dist/browser",
+    "build:browser": "cross-env BABEL_ENV=browser babel src --extensions \".js\" --out-dir dist/browser --source-maps",
     "build:node": "cross-env BABEL_ENV=node babel src --extensions \".js\" --out-dir dist --source-maps",
     "// build:node:test": "cross-env BABEL_ENV=node:test babel test --extensions \".js\" --out-dir build-test --source-maps",
     "ci": "npm run qa",

@@ -7,13 +7,13 @@ import BigNumber from "bn.js";
 import ChildChain from "@omisego/omg-js-childchain";
 import RootChain from "@omisego/omg-js-rootchain";
 import Web3 from "web3";
-import {transaction} from "@omisego/omg-js-util";
+import { transaction } from "@omisego/omg-js-util";
 const ERC20_ABI = require("human-standard-token-abi");
 
-const web3Options = {transactionConfirmationBlocks: 1};
+const web3Options = { transactionConfirmationBlocks: 1 };
 
 export default class EmbarkJSPlasma {
-  constructor({pluginConfig, logger}) {
+  constructor({ pluginConfig, logger }) {
     this.logger = logger || {
       info: console.log,
       warn: console.warn,
@@ -49,7 +49,11 @@ export default class EmbarkJSPlasma {
       this.initing = true;
 
       if (web3) { // web3 is being passed in and we should use that
-        this.web3 = new Web3(web3.currentProvider || web3.givenProvider, null, web3Options); // embark main process
+        const url = this.getUrlFromProvider(web3.currentProvider || web3.givenProvider);
+        if (!url) {
+          return this.logger.error(`Failed to initialize the Plasma plugin: could not obtain a blockchain node URL from the web3 provider`);
+        }
+        this.web3 = new Web3(url, null, web3Options); // embark main process
       }
       else {
         const isConnected = await this.doConnect(this.config.dappConnection);
@@ -81,6 +85,17 @@ export default class EmbarkJSPlasma {
     }
   }
 
+  getUrlFromProvider(provider) {
+    if (!provider) return null;
+    const { connection } = provider;
+    // TODO with the right babel/ES optional chaining support (https://babeljs.io/docs/en/babel-plugin-proposal-optional-chaining), rewrite as 
+    // return connection?.url || connection?.connection?.url;
+    if (!connection) return null;
+    if (connection.url) return connection.url;
+    if (connection.connection && connection.connection.url) return connection.connection.url;
+    return null;
+  }
+
   async getBrowserWeb3() {
     if (window.ethereum) {
       this.web3 = new Web3(window.ethereum, null, web3Options);
@@ -108,11 +123,17 @@ export default class EmbarkJSPlasma {
     };
 
     const connectWeb3 = async () => {
+      const self = this;
       if (window && window.ethereum) {
         this.web3 = new Web3(window.ethereum, null, web3Options);
         await window.ethereum.enable();
-      } else if (window && window.web3) { // legacy
-        this.web3 = new Web3(window.web3.currentProvider, null, web3Options);
+      } else if (window && window.web3 && window.web3.currentProvider) { // legacy
+        const url = self.getUrlFromProvider(window.web3.currentProvider);
+        if (!url) {
+          this.logger.error(`Could not get URL from web3 provider`);
+          return false;
+        }
+        this.web3 = new Web3(url, null, web3Options);
       } else {
         return false;
       }
@@ -131,7 +152,10 @@ export default class EmbarkJSPlasma {
 
     for (let connectionString of connectionList) {
       try {
-        if (connectionString === '$WEB3' && await connectWeb3(connectionString)) {
+        if (connectionString === '$WEB3') {
+          if (!await connectWeb3()) {
+            continue;
+          }
           return true;
         } else if ((/^wss?:\/\//).test(connectionString) && await connectWebsocket(connectionString)) {
           return true;
@@ -163,7 +187,7 @@ export default class EmbarkJSPlasma {
       this.logger.info(`Depositing ${amount} wei...`);
       // ETH deposit
       try {
-        const receipt = await this.rootChain.depositEth(depositTx, amount, {from: this.currentAddress});
+        const receipt = await this.rootChain.depositEth(depositTx, amount, { from: this.currentAddress });
         this.logger.info(receipt);
         const message = `Successfully deposited ${amount} ${currency === transaction.ETH_CURRENCY ? "wei" : currency} in to the Plasma chain.\nView the transaction: https://rinkeby.etherscan.io/tx/${receipt.transactionHash}`;
         return message;
@@ -183,14 +207,14 @@ export default class EmbarkJSPlasma {
       const gasPrice = 1000000;
       const receipt = await erc20.methods
         .approve(this.rootChain.plasmaContractAddress, amount)
-        .send({from: this.currentAddress, gasPrice, gas: 2000000});
+        .send({ from: this.currentAddress, gasPrice, gas: 2000000 });
       // Wait for the approve tx to be mined
       this.logger.info(`${amount} erc20 approved: ${receipt.transactionHash}. Waiting for confirmation...`);
       await confirmTransaction(this.web3, receipt.transactionHash);
       this.logger.info(`... ${receipt.transactionHash} confirmed.`);
     }
 
-    return this.rootChain.depositToken(depositTx, {from: this.currentAddress});
+    return this.rootChain.depositToken(depositTx, { from: this.currentAddress });
   }
 
   async transfer(toAddress, amount, currency = transaction.ETH_CURRENCY) {
@@ -302,7 +326,7 @@ export default class EmbarkJSPlasma {
       Number(exitData.utxo_pos.toString()),
       exitData.txbytes,
       exitData.proof,
-      {from}
+      { from }
     );
   }
 
@@ -348,12 +372,12 @@ export default class EmbarkJSPlasma {
       throw new Error(message);
     }
 
-    const {rootBalance, childBalances} = await this.balances();
+    const { rootBalance, childBalances } = await this.balances();
     this.state.account.address = this.currentAddress;
     this.state.account.rootBalance = rootBalance;
     this.state.account.childBalances = childBalances;
 
-    this.state.transactions = await this.childChain.getTransactions({address: this.currentAddress});
+    this.state.transactions = await this.childChain.getTransactions({ address: this.currentAddress });
 
     this.state.utxos = await this.childChain.getUtxos(this.currentAddress);
   }
