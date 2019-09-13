@@ -13,20 +13,20 @@ The `embarkjs-plasma` plugin will:
 This will expose convenience methods to be used by your DApp to interact with Plasma networks.
 
 ## Requirements
-1. Embark `^4.1.0-beta.2`
+1. Embark `^4.1.1`
 
 ## Plugin config
 Please see [`embark-plasma`](https://github.com/embark-framework/embark-plasma) for information on how to set up the `embarkjs-plasma` plugin to be used in your DApp. 
 
 ## Current limitations and known issues
 1. The plugin currently only supports OMG's Samrong network and `v0.2` of the OMG SDK. The root chain is a contract on Rinkeby and the Plasma chain runs on Samrong. Chain creation for development purposes will be added in future versions.
-2. The DApp can use Metamask OR accounts configured in the contracts config of Embark. Due to this support, the private keys of the accounts configured in Embark will be passed to `EmbarkJS.Plasma` and will be visible in the code generated `embarkjs.js` file. We are hoping to remove the need to pass PK's around soon.
+2. The DApp can use Metamask OR accounts configured in the blockchain config of Embark.
 
 ## Available properties/functions
 `embarkjs-plasma` exposes functions that are meant to make DApp interaction with Plasma chains easier. The following functions and proeprties are available.
 
 ### Properties
-`EmbarkJS.Plasma.currentAddress`: the active account exposed by Metamask.
+`EmbarkJS.Plasma.currentAddress`: the active account exposed by Metamask or the last account configured in the blockchain config. A specific account can be configured setting `ROOTCHAIN_ACCOUNT` in `embark-plasma`'s plugin config (in `embark.json` of the DApp). NOTE: this account must be an unlocked node account OR a wallet account configured in blockchain config.
 
 `EmbarkJS.Plasma.initing`: `true` when the initialisation routine is in progress (ie run via `EmbarkJS.Plasma.init()`).
 
